@@ -1,0 +1,47 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Serverless Slack Application.
+
+Globals:
+  Function:
+    Timeout: 3
+    Runtime: python3.7
+    CodeUri: slack_app/
+
+Resources:
+  SlackAppApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: Slack App Api Gateway
+      StageName: Production
+  SlackAppSlashCommandFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: app.slash_command_handler
+      Environment:
+        Variables:
+          SLACK_SIGNING_SECRET: ''
+          LOG_LEVEL: INFO
+      Events:
+        SlackApp:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SlackAppApiGateway
+            Path: /slash-command
+            Method: post
+  SlackAppEventFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: app.slack_event_handler
+      Environment:
+        Variables:
+          SLACK_SIGNING_SECRET: ''
+          SLACK_VERIFICATION_TOKEN: ''
+          LOG_LEVEL: INFO
+      Events:
+        SlackApp:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SlackAppApiGateway
+            Path: /action-endpoint
+            Method: post
