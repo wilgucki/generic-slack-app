@@ -45,3 +45,8 @@ Resources:
             RestApiId: !Ref SlackAppApiGateway
             Path: /action-endpoint
             Method: post
+Outputs:
+  SlackAppApiGatewaySlashCommand:
+    Value: !Sub 'https://${SlackAppApiGateway}.execute-api.${AWS::Region}.amazonaws.com/Production/slash-command/'
+  SlackAppApiGatewayEvent:
+    Value: !Sub 'https://${SlackAppApiGateway}.execute-api.${AWS::Region}.amazonaws.com/Production/action-endpoint/'
