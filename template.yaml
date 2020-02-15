@@ -20,7 +20,6 @@ Resources:
       Handler: app.slash_command_handler
       Environment:
         Variables:
-          SLACK_SIGNING_SECRET: ''
           LOG_LEVEL: INFO
       Events:
         SlackApp:
@@ -35,8 +34,6 @@ Resources:
       Handler: app.slack_event_handler
       Environment:
         Variables:
-          SLACK_SIGNING_SECRET: ''
-          SLACK_VERIFICATION_TOKEN: ''
           LOG_LEVEL: INFO
       Events:
         SlackApp:
@@ -45,6 +42,7 @@ Resources:
             RestApiId: !Ref SlackAppApiGateway
             Path: /action-endpoint
             Method: post
+
 Outputs:
   SlackAppApiGatewaySlashCommand:
     Value: !Sub 'https://${SlackAppApiGateway}.execute-api.${AWS::Region}.amazonaws.com/Production/slash-command/'
