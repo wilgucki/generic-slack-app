@@ -34,6 +34,8 @@ def slash_command_handler(event, context):
     # body['command']
     # body['text']
 
+    logging.info('acknowledge message')
+
     return {
         "statusCode": 200
     }
@@ -69,6 +71,8 @@ def slack_event_handler(event, context):
     )
 
     # handle app/bot here
+
+    logging.info('acknowledge message')
 
     return {
         "statusCode": 200
