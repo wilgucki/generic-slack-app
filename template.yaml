@@ -7,6 +7,10 @@ Globals:
     Timeout: 3
     Runtime: python3.7
     CodeUri: slack_app/
+    Environment:
+      Variables:
+        LOG_LEVEL: INFO
+        QUEUE_URL: !Ref SlackAppQueue
 
 Resources:
   SlackAppApiGateway:
@@ -22,10 +26,6 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Handler: app.slash_command_handler
-      Environment:
-        Variables:
-          LOG_LEVEL: INFO
-          QUEUE_URL: !Ref SlackAppQueue
       Events:
         SlackApp:
           Type: Api
@@ -37,10 +37,6 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Handler: app.slack_event_handler
-      Environment:
-        Variables:
-          LOG_LEVEL: INFO
-          QUEUE_URL: !Ref SlackAppQueue
       Events:
         SlackApp:
           Type: Api
@@ -52,9 +48,6 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Handler: app.queue_worker
-      Environment:
-        Variables:
-          LOG_LEVEL: INFO
       Events:
         SlackAppQueueMessage:
           Type: SQS
