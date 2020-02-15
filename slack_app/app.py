@@ -10,6 +10,9 @@ from slack_utils import signature, challenge
 logger = logging.getLogger()
 logger.setLevel(os.getenv('LOG_LEVEL', logging.INFO))
 
+SLACK_TYPE_COMMAND = 'command'
+SLACK_TYPE_APP = 'app'
+
 
 def slash_command_handler(event, context):
     logger.info('## EVENT')
@@ -30,9 +33,15 @@ def slash_command_handler(event, context):
     logger.info('## SLASH COMMAND BODY')
     logger.info(body)
 
-    # handle slash command here
-    # body['command']
-    # body['text']
+    logging.info('add a message to the queue')
+    sqs_client = boto3.client('sqs')
+    sqs_client.send_message(
+        QueueUrl=os.environ['QUEUE_URL'],
+        MessageBody=json.dumps({
+            'type': SLACK_TYPE_COMMAND,
+            'body': json.dumps(body),
+        })
+    )
 
     logging.info('acknowledge message')
 
@@ -70,10 +79,29 @@ def slack_event_handler(event, context):
         signing_secret['Parameter']['Value']
     )
 
-    # handle app/bot here
+    logging.info('add a message to the queue')
+    sqs_client = boto3.client('sqs')
+    sqs_client.send_message(
+        QueueUrl=os.environ['QUEUE_URL'],
+        MessageBody=json.dumps({
+            'type': SLACK_TYPE_APP,
+            'body': json.dumps(body),
+        })
+    )
 
     logging.info('acknowledge message')
 
     return {
         "statusCode": 200
     }
+
+
+def queue_worker(event, context):
+    logger.info('## EVENT')
+    logger.info(event)
+
+    for record in event['Records']:
+        body = json.loads(record['body'])
+        logger.info('## BODY')
+        logger.info(body)
+        # TODO process message based on type
