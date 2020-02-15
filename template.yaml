@@ -14,6 +14,10 @@ Resources:
     Properties:
       Name: Slack App Api Gateway
       StageName: Production
+  SlackAppQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: SlackAppQueue
   SlackAppSlashCommandFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -21,6 +25,7 @@ Resources:
       Environment:
         Variables:
           LOG_LEVEL: INFO
+          QUEUE_URL: !Ref SlackAppQueue
       Events:
         SlackApp:
           Type: Api
@@ -35,6 +40,7 @@ Resources:
       Environment:
         Variables:
           LOG_LEVEL: INFO
+          QUEUE_URL: !Ref SlackAppQueue
       Events:
         SlackApp:
           Type: Api
@@ -42,9 +48,26 @@ Resources:
             RestApiId: !Ref SlackAppApiGateway
             Path: /action-endpoint
             Method: post
+  SlackAppQueueWorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: app.queue_worker
+      Environment:
+        Variables:
+          LOG_LEVEL: INFO
+      Events:
+        SlackAppQueueMessage:
+          Type: SQS
+          Properties:
+            BatchSize: 1
+            Queue: !GetAtt SlackAppQueue.Arn
 
 Outputs:
   SlackAppApiGatewaySlashCommand:
     Value: !Sub 'https://${SlackAppApiGateway}.execute-api.${AWS::Region}.amazonaws.com/Production/slash-command/'
   SlackAppApiGatewayEvent:
     Value: !Sub 'https://${SlackAppApiGateway}.execute-api.${AWS::Region}.amazonaws.com/Production/action-endpoint/'
+  SlackAppQueueUrl:
+    Value: !Ref SlackAppQueue
+  SlackAppQueueARN:
+    Value: !GetAtt SlackAppQueue.Arn
