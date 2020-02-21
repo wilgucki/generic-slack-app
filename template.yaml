@@ -22,10 +22,14 @@ Resources:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: SlackAppQueue
-  SlackAppSlashCommandFunction:
+  SlackAppHandlerFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: app.slash_command_handler
+      Handler: app.slack_app_handler
+      Policies:
+        - AmazonSSMReadOnlyAccess
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt SlackAppQueue.QueueName
       Events:
         SlackApp:
           Type: Api
@@ -48,6 +52,9 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Handler: app.queue_worker
+      Policies:
+        - SQSPollerPolicy:
+            QueueName: !GetAtt SlackAppQueue.QueueName
       Events:
         SlackAppQueueMessage:
           Type: SQS
