@@ -35,18 +35,13 @@ Resources:
           Type: Api
           Properties:
             RestApiId: !Ref SlackAppApiGateway
-            Path: /slash-command
+            Path: /action-endpoint
             Method: post
-  SlackAppEventFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      Handler: app.slack_event_handler
-      Events:
-        SlackApp:
+        SlashCommand:
           Type: Api
           Properties:
             RestApiId: !Ref SlackAppApiGateway
-            Path: /action-endpoint
+            Path: /slash-command
             Method: post
   SlackAppQueueWorkerFunction:
     Type: AWS::Serverless::Function

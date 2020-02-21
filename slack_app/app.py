@@ -4,6 +4,7 @@ import os
 from urllib.parse import parse_qsl
 
 import boto3
+import requests
 from slack_utils import signature, challenge
 
 
@@ -14,54 +15,23 @@ SLACK_TYPE_COMMAND = 'command'
 SLACK_TYPE_APP = 'app'
 
 
-def slash_command_handler(event, context):
+def slack_app_handler(event, context):
     logger.info('## EVENT')
     logger.info(event)
 
-    ssm_client = boto3.client('ssm')
-    signing_secret = ssm_client.get_parameter(Name='SLACK_APP_SLACK_SIGNING_SECRET', WithDecryption=True)
-
-    signature.verify(
-        event['headers']['X-Slack-Signature'],
-        event['headers']['X-Slack-Request-Timestamp'],
-        event['body'],
-        signing_secret['Parameter']['Value']
-    )
-
-    body = dict(parse_qsl(event['body']))
-
-    logger.info('## SLASH COMMAND BODY')
-    logger.info(body)
-
-    logging.info('add a message to the queue')
-    sqs_client = boto3.client('sqs')
-    sqs_client.send_message(
-        QueueUrl=os.environ['QUEUE_URL'],
-        MessageBody=json.dumps({
-            'type': SLACK_TYPE_COMMAND,
-            'body': json.dumps(body),
-        })
-    )
-
-    logging.info('acknowledge message')
-
-    return {
-        "statusCode": 200
-    }
-
-
-def slack_event_handler(event, context):
-    logger.info('## EVENT')
-    logger.info(event)
-
-    body = json.loads(event['body'])
+    if event['resource'] == '/slash-command':
+        body = dict(parse_qsl(event['body']))
+    elif event['resource'] == '/action-endpoint':
+        body = json.loads(event['body'])
+    else:
+        raise ValueError(f'Unknown resource: {event["resource"]}')
 
     logger.info('## BODY')
     logger.info(body)
 
     ssm_client = boto3.client('ssm')
 
-    if 'type' in body and body['type'] == 'url_verification':
+    if event['resource'] == '/action-endpoint' and body['event']['type'] == 'url_verification':
         verification_token = ssm_client.get_parameter(Name='SLACK_APP_SLACK_VERIFICATION_TOKEN', WithDecryption=True)
         os.environ['SLACK_VERIFICATION_TOKEN'] = verification_token['Parameter']['Value']
 
@@ -79,14 +49,11 @@ def slack_event_handler(event, context):
         signing_secret['Parameter']['Value']
     )
 
-    logging.info('add a message to the queue')
+    logging.info('adding message to the queue')
     sqs_client = boto3.client('sqs')
     sqs_client.send_message(
         QueueUrl=os.environ['QUEUE_URL'],
-        MessageBody=json.dumps({
-            'type': SLACK_TYPE_APP,
-            'body': json.dumps(body),
-        })
+        MessageBody=json.dumps(body)
     )
 
     logging.info('acknowledge message')
@@ -104,4 +71,13 @@ def queue_worker(event, context):
         body = json.loads(record['body'])
         logger.info('## BODY')
         logger.info(body)
-        # TODO process message based on type
+
+        if 'response_url' in body:  # slash command
+            requests.post(
+                body['response_url'],
+                headers={'Content-type': 'application/json'},
+                data=json.dumps({'text': 'Thanks for your request, we\'ll process it and get back to you.'})
+            )
+        else:
+            # TODO send response
+            pass
