@@ -21,8 +21,6 @@ Parameters:
   ApiStageName:
     Type: String
     Default: dev
-  AppName:
-    Type: String
   SlackAppQueueMaxReceiveCount:
     Type: Number
     Default: 2
@@ -31,13 +29,13 @@ Resources:
   SlackAppApiGateway:
     Type: AWS::Serverless::Api
     Properties:
-      Name: !Sub '${AppName}-api-gateway'
+      Name: !Sub '${AWS::StackName}-api-gateway'
       StageName: !Ref ApiStageName
 
   SlackAppSNSTopic:
     Type: AWS::SNS::Topic
     Properties:
-      TopicName: !Sub '${AppName}-topic'
+      TopicName: !Sub '${AWS::StackName}-topic'
       Subscription:
         - Protocol: sqs
           Endpoint: !GetAtt SlackAppQueue.Arn
@@ -45,25 +43,43 @@ Resources:
   SlackAppQueue:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: !Sub '${AppName}-queue'
+      QueueName: !Sub '${AWS::StackName}-queue'
       RedrivePolicy:
         deadLetterTargetArn: !GetAtt SlackAppDLQ.Arn
         maxReceiveCount: !Ref SlackAppQueueMaxReceiveCount
 
+  SlackAppQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref SlackAppQueue
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Action:
+              - sqs:SendMessage
+            Principal:
+              Service: sns.amazonaws.com
+            Resource: !GetAtt SlackAppQueue.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !Ref SlackAppSNSTopic
+
   SlackAppDLQ:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: !Sub '${AppName}-dlq'
+      QueueName: !Sub '${AWS::StackName}-dlq'
 
   SlackAppHandlerFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub '${AppName}-slack-handler'
+      FunctionName: !Sub '${AWS::StackName}-slack-handler'
       Handler: app.slack_app_handler
       Environment:
         Variables:
           SSM_VERIFICATION_TOKEN_NAME: !Ref SSMVerificationTokenName
           SSM_SECRET_NAME: !Ref SSMSecretName
+          SNS_TOPIC_ARN: !Ref SlackAppSNSTopic
       Policies:
         - AmazonSSMReadOnlyAccess
         - SNSPublishMessagePolicy:
@@ -85,7 +101,7 @@ Resources:
   SlackAppQueueWorkerFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub '${AppName}-queue-worker'
+      FunctionName: !Sub '${AWS::StackName}-queue-worker'
       Handler: app.queue_worker
       Policies:
         - SQSPollerPolicy:
