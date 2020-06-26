@@ -5,31 +5,69 @@ Description: Serverless Slack Application.
 Globals:
   Function:
     Timeout: 3
-    Runtime: python3.7
+    Runtime: python3.8
     CodeUri: slack_app/
     Environment:
       Variables:
         LOG_LEVEL: INFO
-        QUEUE_URL: !Ref SlackAppQueue
+
+Parameters:
+  SSMVerificationTokenName:
+    Type: String
+    Default: SLACK_APP_SLACK_SIGNING_SECRET
+  SSMSecretName:
+    Type: String
+    Default: SLACK_APP_SLACK_SIGNING_SECRET
+  ApiStageName:
+    Type: String
+    Default: dev
+  AppName:
+    Type: String
+  SlackAppQueueMaxReceiveCount:
+    Type: Number
+    Default: 2
 
 Resources:
   SlackAppApiGateway:
     Type: AWS::Serverless::Api
     Properties:
-      Name: Slack App Api Gateway
-      StageName: Production
+      Name: !Sub '${AppName}-api-gateway'
+      StageName: !Ref ApiStageName
+
+  SlackAppSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${AppName}-topic'
+      Subscription:
+        - Protocol: sqs
+          Endpoint: !GetAtt SlackAppQueue.Arn
+
   SlackAppQueue:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: SlackAppQueue
+      QueueName: !Sub '${AppName}-queue'
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt SlackAppDLQ.Arn
+        maxReceiveCount: !Ref SlackAppQueueMaxReceiveCount
+
+  SlackAppDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${AppName}-dlq'
+
   SlackAppHandlerFunction:
     Type: AWS::Serverless::Function
     Properties:
+      FunctionName: !Sub '${AppName}-slack-handler'
       Handler: app.slack_app_handler
+      Environment:
+        Variables:
+          SSM_VERIFICATION_TOKEN_NAME: !Ref SSMVerificationTokenName
+          SSM_SECRET_NAME: !Ref SSMSecretName
       Policies:
         - AmazonSSMReadOnlyAccess
-        - SQSSendMessagePolicy:
-            QueueName: !GetAtt SlackAppQueue.QueueName
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt SlackAppSNSTopic.TopicName
       Events:
         SlackApp:
           Type: Api
@@ -43,9 +81,11 @@ Resources:
             RestApiId: !Ref SlackAppApiGateway
             Path: /slash-command
             Method: post
+
   SlackAppQueueWorkerFunction:
     Type: AWS::Serverless::Function
     Properties:
+      FunctionName: !Sub '${AppName}-queue-worker'
       Handler: app.queue_worker
       Policies:
         - SQSPollerPolicy:
@@ -54,15 +94,11 @@ Resources:
         SlackAppQueueMessage:
           Type: SQS
           Properties:
-            BatchSize: 1
+            BatchSize: 10
             Queue: !GetAtt SlackAppQueue.Arn
 
 Outputs:
   SlackAppApiGatewaySlashCommand:
-    Value: !Sub 'https://${SlackAppApiGateway}.execute-api.${AWS::Region}.amazonaws.com/Production/slash-command/'
+    Value: !Sub 'https://${SlackAppApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${ApiStageName}/slash-command/'
   SlackAppApiGatewayEvent:
-    Value: !Sub 'https://${SlackAppApiGateway}.execute-api.${AWS::Region}.amazonaws.com/Production/action-endpoint/'
-  SlackAppQueueUrl:
-    Value: !Ref SlackAppQueue
-  SlackAppQueueARN:
-    Value: !GetAtt SlackAppQueue.Arn
+    Value: !Sub 'https://${SlackAppApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${ApiStageName}/action-endpoint/'
