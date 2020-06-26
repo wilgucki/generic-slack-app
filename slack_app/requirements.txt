@@ -1,3 +1,2 @@
 requests==2.24.0
 slack-utils==0.2.1
-boto3==1.14.11
