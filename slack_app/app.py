@@ -44,9 +44,9 @@ def slack_app_handler(event, context):
         signing_secret['Parameter']['Value']
     )
 
-    logging.info('adding message to the queue')
-    sqs_client = boto3.client('sqs')
-    sqs_client.send_message(QueueUrl=os.environ['QUEUE_URL'], MessageBody=json.dumps(body))
+    logger.info('Publish message to SNS topic')
+    sns = boto3.client('sns')
+    sns.publish(TargetArn=os.environ['SNS_TOPIC_ARN'], Message=json.dumps(body))
 
     logging.info('acknowledge message')
 
