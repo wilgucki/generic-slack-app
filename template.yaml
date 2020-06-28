@@ -21,37 +21,54 @@ Parameters:
   ApiStageName:
     Type: String
     Default: dev
-  SlackAppQueueMaxReceiveCount:
+  QueueMaxReceiveCount:
     Type: Number
     Default: 2
 
 Resources:
-  SlackAppApiGateway:
+  ApiGateway:
     Type: AWS::Serverless::Api
     Properties:
       Name: !Sub '${AWS::StackName}-api-gateway'
       StageName: !Ref ApiStageName
 
-  SlackAppSNSTopic:
+  SlashCommandTopic:
     Type: AWS::SNS::Topic
     Properties:
-      TopicName: !Sub '${AWS::StackName}-topic'
+      TopicName: !Sub '${AWS::StackName}-slash-command'
+      Subscription:
+        - Protocol: sqs
+          Endpoint: !GetAtt SlashCommandQueue.Arn
+
+  SlackAppTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${AWS::StackName}-slack-app'
       Subscription:
         - Protocol: sqs
           Endpoint: !GetAtt SlackAppQueue.Arn
 
+  SlashCommandQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${AWS::StackName}-slash-command-queue'
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DeadLetterQueue.Arn
+        maxReceiveCount: !Ref QueueMaxReceiveCount
+
   SlackAppQueue:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: !Sub '${AWS::StackName}-queue'
+      QueueName: !Sub '${AWS::StackName}-slack-app-queue'
       RedrivePolicy:
-        deadLetterTargetArn: !GetAtt SlackAppDLQ.Arn
-        maxReceiveCount: !Ref SlackAppQueueMaxReceiveCount
+        deadLetterTargetArn: !GetAtt DeadLetterQueue.Arn
+        maxReceiveCount: !Ref QueueMaxReceiveCount
 
-  SlackAppQueuePolicy:
+  QueuesPolicy:
     Type: AWS::SQS::QueuePolicy
     Properties:
       Queues:
+        - !Ref SlashCommandQueue
         - !Ref SlackAppQueue
       PolicyDocument:
         Statement:
@@ -60,12 +77,21 @@ Resources:
               - sqs:SendMessage
             Principal:
               Service: sns.amazonaws.com
+            Resource: !GetAtt SlashCommandQueue.Arn
+            Condition:
+              ArnLike:
+                aws:SourceArn: !Ref SlashCommandTopic
+          - Effect: Allow
+            Action:
+              - sqs:SendMessage
+            Principal:
+              Service: sns.amazonaws.com
             Resource: !GetAtt SlackAppQueue.Arn
             Condition:
-              ArnEquals:
-                aws:SourceArn: !Ref SlackAppSNSTopic
+              ArnLike:
+                aws:SourceArn: !Ref SlackAppTopic
 
-  SlackAppDLQ:
+  DeadLetterQueue:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: !Sub '${AWS::StackName}-dlq'
@@ -79,42 +105,61 @@ Resources:
         Variables:
           SSM_VERIFICATION_TOKEN_NAME: !Ref SSMVerificationTokenName
           SSM_SECRET_NAME: !Ref SSMSecretName
-          SNS_TOPIC_ARN: !Ref SlackAppSNSTopic
+          SLASH_COMMAND_TOPIC_ARN: !Ref SlashCommandTopic
+          SLACK_APP_TOPIC_ARN: !Ref SlackAppTopic
       Policies:
         - AmazonSSMReadOnlyAccess
         - SNSPublishMessagePolicy:
-            TopicName: !GetAtt SlackAppSNSTopic.TopicName
+            TopicName: !GetAtt SlashCommandTopic.TopicName
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt SlackAppTopic.TopicName
       Events:
         SlackApp:
           Type: Api
           Properties:
-            RestApiId: !Ref SlackAppApiGateway
+            RestApiId: !Ref ApiGateway
             Path: /action-endpoint
             Method: post
         SlashCommand:
           Type: Api
           Properties:
-            RestApiId: !Ref SlackAppApiGateway
+            RestApiId: !Ref ApiGateway
             Path: /slash-command
             Method: post
 
-  SlackAppQueueWorkerFunction:
+  SlashCommandWorkerFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub '${AWS::StackName}-queue-worker'
-      Handler: app.queue_worker
+      FunctionName: !Sub '${AWS::StackName}-slash-command-worker'
+      Handler: app.slash_command_worker
+      Policies:
+        - SQSPollerPolicy:
+            QueueName: !GetAtt SlashCommandQueue.QueueName
+      Events:
+        QueueMessage:
+          Type: SQS
+          Properties:
+            BatchSize: 10
+            Queue: !GetAtt SlashCommandQueue.Arn
+
+  SlackAppWorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-slack-app-worker'
+      Handler: app.slash_command_worker
       Policies:
         - SQSPollerPolicy:
             QueueName: !GetAtt SlackAppQueue.QueueName
       Events:
-        SlackAppQueueMessage:
+        QueueMessage:
           Type: SQS
           Properties:
             BatchSize: 10
             Queue: !GetAtt SlackAppQueue.Arn
 
+
 Outputs:
-  SlackAppApiGatewaySlashCommand:
-    Value: !Sub 'https://${SlackAppApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${ApiStageName}/slash-command/'
-  SlackAppApiGatewayEvent:
-    Value: !Sub 'https://${SlackAppApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${ApiStageName}/action-endpoint/'
+  ApiGatewaySlashCommand:
+    Value: !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${ApiStageName}/slash-command/'
+  ApiGatewaySlackApp:
+    Value: !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${ApiStageName}/action-endpoint/'

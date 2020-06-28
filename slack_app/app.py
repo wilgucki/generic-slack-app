@@ -16,18 +16,21 @@ SLACK_TYPE_APP = 'app'
 
 
 def slack_app_handler(event, context):
-    if event['resource'] == '/slash-command':
+    resource = event['resource'].strip('/')
+    logger.info(f'Received {resource}')
+
+    if resource == 'slash-command':
         body = dict(parse_qsl(event['body']))
-    elif event['resource'] == '/action-endpoint':
+        sns_topic = os.environ['SLASH_COMMAND_TOPIC_ARN']
+    elif resource == 'action-endpoint':
         body = json.loads(event['body'])
+        sns_topic = os.environ['SLACK_APP_TOPIC_ARN']
     else:
         raise ValueError(f'Unknown resource: {event["resource"]}')
 
-    logger.info(f'Received {event["resource"]}')
-
     ssm_client = boto3.client('ssm')
 
-    if event['resource'] == '/action-endpoint' and body['event']['type'] == 'url_verification':
+    if resource == 'action-endpoint' and body['event']['type'] == 'url_verification':
         logger.info('Respond to challenge request')
         token_name = os.environ['SSM_VERIFICATION_TOKEN_NAME']
 
@@ -50,18 +53,17 @@ def slack_app_handler(event, context):
 
     logger.info('Publish message to SNS topic')
     sns = boto3.client('sns')
-    sns.publish(TargetArn=os.environ['SNS_TOPIC_ARN'], Message=json.dumps(body))
+    sns.publish(TargetArn=sns_topic, Message=json.dumps(body))
 
     return {'statusCode': 200}
 
 
-def queue_worker(event, context):
+def slash_command_worker(event, context):
     for record in event['Records']:
         body = json.loads(record['body'])
         message = json.loads(body['Message'])
 
-        # TODO check if this is the best way of detecting slash commands
-        if 'response_url' in message:  # slash command
+        if 'response_url' in message:
 
             # process message and replace this generic response with something more adequate
             requests.post(
@@ -72,3 +74,11 @@ def queue_worker(event, context):
         else:
             # TODO send response
             pass
+
+
+def slack_app_worker(event, context):
+    for record in event['Records']:
+        body = json.loads(record['body'])
+        message = json.loads(body['Message'])
+
+        # TODO handle message
