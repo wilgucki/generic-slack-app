@@ -4,8 +4,9 @@ import os
 from urllib.parse import parse_qsl
 
 import boto3
-import requests
 from slack_utils import signature, challenge
+
+from response_handler import SlashCommandResponseHandler
 
 
 logger = logging.getLogger()
@@ -63,16 +64,16 @@ def slash_command_worker(event, context):
         body = json.loads(record['body'])
         message = json.loads(body['Message'])
 
-        # process message and replace this generic response with something more adequate
-        requests.post(
-            message['response_url'],
-            headers={'Content-type': 'application/json'},
-            data=json.dumps({'text': 'it works!', 'response_type': 'ephemeral'})
+        handler = SlashCommandResponseHandler(
+            command=message['command'],
+            text=message['text'],
+            response_url=message['response_url']
         )
+        handler.process_input()
+        handler.send_response()
 
 
 def slack_app_worker(event, context):
     for record in event['Records']:
         body = json.loads(record['body'])
-
-        # process message
+        # TODO
